@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
@@ -29,6 +29,9 @@ namespace CustomIndicators
 
         [Display(Name = "Header Position", GroupName = "1. HUD Visibility", Order = 3)]
         public HeaderPositionOption HeaderPosition { get; set; } = HeaderPositionOption.Top;
+
+        [Display(Name = "Show Timeline Icons", GroupName = "1. HUD Visibility", Order = 4)]
+        public bool ShowTimelineIcons { get; set; } = true;
 
         // --- LAYOUT & SIZING ---
         [Display(Name = "Offset X (Pixels)", GroupName = "2. Layout & Sizing", Order = 1)]
@@ -73,7 +76,9 @@ namespace CustomIndicators
             public Rectangle Bounds { get; set; }
             public IMarketEvent Item { get; set; }
         }
+
         private List<EventHitBox> _eventHitBoxes = new List<EventHitBox>();
+        private List<EventHitBox> _timelineHitBoxes = new List<EventHitBox>();
 
         public TradeHudVisualIndicator() : base(true)
         {
@@ -81,7 +86,6 @@ namespace CustomIndicators
             EnableCustomDrawing = true;
             SubscribeToDrawingEvents(DrawingLayouts.LatestBar | DrawingLayouts.Final);
 
-            // Hides the unused default ATAS plot line from the settings menu
             DataSeries[0].IsHidden = true;
 
             _dataManager = new MarketDataManager();
@@ -115,6 +119,16 @@ namespace CustomIndicators
                 return true;
             }
 
+            foreach (var hitBox in _timelineHitBoxes)
+            {
+                if (hitBox.Bounds.Contains(e.Location))
+                {
+                    _expandedEvent = (_expandedEvent == hitBox.Item) ? null : hitBox.Item;
+                    RedrawChart();
+                    return true;
+                }
+            }
+
             if (IsExpanded)
             {
                 foreach (var hitBox in _eventHitBoxes)
@@ -132,15 +146,28 @@ namespace CustomIndicators
 
         public override bool ProcessMouseMove(RenderControlMouseEventArgs e)
         {
-            if (!EnableHud || !IsExpanded || ChartInfo == null) return false;
+            if (!EnableHud || ChartInfo == null) return false;
 
             IMarketEvent currentHover = null;
-            foreach (var hitBox in _eventHitBoxes)
+
+            foreach (var hitBox in _timelineHitBoxes)
             {
                 if (hitBox.Bounds.Contains(e.Location))
                 {
                     currentHover = hitBox.Item;
                     break;
+                }
+            }
+
+            if (currentHover == null && IsExpanded)
+            {
+                foreach (var hitBox in _eventHitBoxes)
+                {
+                    if (hitBox.Bounds.Contains(e.Location))
+                    {
+                        currentHover = hitBox.Item;
+                        break;
+                    }
                 }
             }
 
@@ -177,6 +204,38 @@ namespace CustomIndicators
             return list;
         }
 
+        private int GetXCoordinateByTime(DateTime targetTime)
+        {
+            int lastBar = CurrentBar - 1;
+            if (lastBar < 1) return 0;
+
+            var lastCandle = GetCandle(lastBar);
+
+            if (targetTime <= lastCandle.Time)
+            {
+                for (int i = lastBar; i >= 0; i--)
+                {
+                    if (GetCandle(i).Time <= targetTime)
+                        return ChartInfo.GetXByBar(i);
+                }
+                return ChartInfo.GetXByBar(0);
+            }
+
+            int lastX = ChartInfo.GetXByBar(lastBar);
+            int prevX = ChartInfo.GetXByBar(lastBar - 1);
+            int dx = lastX - prevX;
+            if (dx <= 0) dx = 5;
+
+            var prevCandle = GetCandle(lastBar - 1);
+            double dt = (lastCandle.Time - prevCandle.Time).TotalSeconds;
+            if (dt <= 0) dt = 60;
+
+            double futureSeconds = (targetTime - lastCandle.Time).TotalSeconds;
+            double extrapolatedX = lastX + ((futureSeconds / dt) * dx);
+
+            return (int)extrapolatedX;
+        }
+
         protected override void OnDispose()
         {
             if (_dataManager != null)
@@ -197,6 +256,94 @@ namespace CustomIndicators
             int x = OffsetX;
             int baseY = OffsetY;
 
+            _eventHitBoxes.Clear();
+            _timelineHitBoxes.Clear();
+
+            var eventsCopy = _dataManager.MarketEvents.ToList();
+
+            DateTime currentTime = DateTime.Now;
+            var todayQuery = eventsCopy.OfType<EconomicEvent>()
+                .Where(e => e.Timestamp.Date == DateTime.Today && e.Timestamp.AddMinutes(15) >= currentTime);
+
+            if (HighImpactOnly)
+            {
+                todayQuery = todayQuery.Where(e => e.Importance == EventImportance.High);
+            }
+
+            var todayEvents = todayQuery.OrderBy(e => e.Timestamp).Take(Math.Max(1, MaxEventsToShow)).ToList();
+            var newsItems = eventsCopy.OfType<NewsItem>()
+                .OrderByDescending(e => e.Timestamp).Skip(_scrollOffset).Take(15).ToList();
+
+
+            // ==========================================
+            // 1. DRAW TIMELINE ICONS (Bottom of Chart)
+            // ==========================================
+            if (ShowTimelineIcons)
+            {
+                int bottomY = Container.Region.Height - 10;
+
+                foreach (var ev in todayEvents)
+                {
+                    int xCenter = GetXCoordinateByTime(ev.Timestamp);
+
+                    if (xCenter < -50 || xCenter > Container.Region.Width + 200) continue;
+
+                    string lbl = ev.Importance == EventImportance.High ? "HIGH" :
+                                 (ev.Importance == EventImportance.Medium ? "MED" : "LOW");
+
+                    Color impactColor = ev.Importance == EventImportance.High ? Color.FromArgb(255, 230, 50, 50) :
+                                      (ev.Importance == EventImportance.Medium ? Color.FromArgb(255, 255, 165, 0) : Color.FromArgb(255, 0, 220, 100));
+
+                    Color textColor = (ev == _hoveredEvent) ? Color.FromArgb(255, 120, 200, 255) : impactColor;
+                    Color bgColor = Color.FromArgb(255, 30, 30, 35);
+                    Color borderColor = (ev == _hoveredEvent) ? Color.FromArgb(255, 120, 200, 255) : Color.FromArgb(255, 60, 60, 60);
+
+                    int boxW = 40;
+                    int boxH = 18;
+                    int boxX = xCenter - (boxW / 2);
+                    int iconY = bottomY - boxH;
+
+                    var iconRect = new Rectangle(boxX, iconY, boxW, boxH);
+
+                    context.FillRectangle(bgColor, iconRect);
+                    context.DrawRectangle(new RenderPen(borderColor, 1), iconRect);
+                    context.DrawString(lbl, _textFont, textColor, boxX + 4, iconY + 1);
+
+                    _timelineHitBoxes.Add(new EventHitBox { Bounds = iconRect, Item = ev });
+
+                    if (ev == _expandedEvent)
+                    {
+                        string popupText = $"{ev.Timestamp:HH:mm} | {ev.Description}";
+                        var wrappedHeadline = WrapText(popupText, 40);
+
+                        int popW = 260;
+                        int popH = 10 + (wrappedHeadline.Count * 16);
+                        int popX = xCenter - (popW / 2);
+                        int popY = iconY - popH - 10;
+
+                        if (popX < 5) popX = 5;
+                        if (popX + popW > Container.Region.Width - 5) popX = Container.Region.Width - popW - 5;
+
+                        var popRect = new Rectangle(popX, popY, popW, popH);
+                        context.FillRectangle(Color.FromArgb(240, 30, 30, 35), popRect);
+                        context.DrawRectangle(new RenderPen(textColor, 2), popRect);
+
+                        context.DrawLine(new RenderPen(textColor, 2), xCenter, popY + popH, xCenter, iconY);
+
+                        int textY = popY + 5;
+                        foreach (var line in wrappedHeadline)
+                        {
+                            context.DrawString(line, _headerFont, Color.White, popX + 10, textY);
+                            textY += 16;
+                        }
+                    }
+                }
+            }
+
+
+            // ==========================================
+            // 2. DRAW MAIN HUD (Top Left / Right)
+            // ==========================================
             if (!IsExpanded)
             {
                 int collapsedY = (HeaderPosition == HeaderPositionOption.Top) ? baseY : baseY - 25;
@@ -210,7 +357,6 @@ namespace CustomIndicators
             }
 
             int boxY = (HeaderPosition == HeaderPositionOption.Top) ? baseY : baseY - height;
-
             var mainRect = new Rectangle(x, boxY, width, height);
             context.FillRectangle(Color.FromArgb(230, 25, 25, 30), mainRect);
             context.DrawRectangle(new RenderPen(Color.FromArgb(255, 60, 60, 60), 1), mainRect);
@@ -232,24 +378,6 @@ namespace CustomIndicators
             context.FillRectangle(Color.FromArgb(255, 60, 60, 70), _downButtonHitBox);
             context.DrawString("▼", _textFont, Color.White, x + width - 19, headerY + 3);
 
-            var eventsCopy = _dataManager.MarketEvents.ToList();
-            _eventHitBoxes.Clear();
-
-            // FILTER: Shows today's events, but removes them 15 minutes after they pass
-            DateTime currentTime = DateTime.Now;
-            var todayQuery = eventsCopy.OfType<EconomicEvent>()
-                .Where(e => e.Timestamp.Date == DateTime.Today && e.Timestamp.AddMinutes(15) >= currentTime);
-
-            if (HighImpactOnly)
-            {
-                todayQuery = todayQuery.Where(e => e.Importance == EventImportance.High);
-            }
-
-            var todayEvents = todayQuery.OrderBy(e => e.Timestamp).Take(Math.Max(1, MaxEventsToShow)).ToList();
-
-            var newsItems = eventsCopy.OfType<NewsItem>()
-                .OrderByDescending(e => e.Timestamp).Skip(_scrollOffset).Take(15).ToList();
-
             int currentY = contentStartY;
 
             // --- SECTION: TODAY'S EVENTS ---
@@ -266,10 +394,7 @@ namespace CustomIndicators
                     Color impactColor = ev.Importance == EventImportance.High ? Color.FromArgb(255, 230, 50, 50) :
                                         (ev.Importance == EventImportance.Medium ? Color.FromArgb(255, 255, 165, 0) : Color.FromArgb(255, 0, 220, 100));
 
-                    if (ev == _hoveredEvent && ev != _expandedEvent)
-                    {
-                        impactColor = Color.FromArgb(255, 120, 200, 255);
-                    }
+                    if (ev == _hoveredEvent && ev != _expandedEvent) impactColor = Color.FromArgb(255, 120, 200, 255);
 
                     if (ev == _expandedEvent)
                     {
@@ -303,11 +428,7 @@ namespace CustomIndicators
                         currentY += 18;
                     }
 
-                    _eventHitBoxes.Add(new EventHitBox
-                    {
-                        Bounds = new Rectangle(x, itemStartY, width, currentY - itemStartY),
-                        Item = ev
-                    });
+                    _eventHitBoxes.Add(new EventHitBox { Bounds = new Rectangle(x, itemStartY, width, currentY - itemStartY), Item = ev });
                 }
             }
             else
@@ -336,10 +457,7 @@ namespace CustomIndicators
                     int itemStartY = currentY;
                     Color impactColor = news.Importance == EventImportance.High ? Color.FromArgb(255, 230, 50, 50) : Color.White;
 
-                    if (news == _hoveredEvent && news != _expandedEvent)
-                    {
-                        impactColor = Color.FromArgb(255, 120, 200, 255);
-                    }
+                    if (news == _hoveredEvent && news != _expandedEvent) impactColor = Color.FromArgb(255, 120, 200, 255);
 
                     if (news == _expandedEvent)
                     {
@@ -370,11 +488,7 @@ namespace CustomIndicators
                         currentY += 18;
                     }
 
-                    _eventHitBoxes.Add(new EventHitBox
-                    {
-                        Bounds = new Rectangle(x, itemStartY, width, currentY - itemStartY),
-                        Item = news
-                    });
+                    _eventHitBoxes.Add(new EventHitBox { Bounds = new Rectangle(x, itemStartY, width, currentY - itemStartY), Item = news });
                 }
             }
             else
