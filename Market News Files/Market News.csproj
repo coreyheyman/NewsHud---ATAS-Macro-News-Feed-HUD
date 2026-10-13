@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<RootNamespace>Markey_News</RootNamespace>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>disable</Nullable>
+		<OutputType>Library</OutputType>
+		<!-- Remove <UseWPF>true</UseWPF> entirely -->
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="HtmlAgilityPack" Version="1.13.0" />
+		
+	</ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ATAS.DataFeedsCore">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\ATAS.DataFeedsCore.dll</HintPath>
+    </Reference>
+    <Reference Include="ATAS.Indicators">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\ATAS.Indicators.dll</HintPath>  
+    </Reference>
+    <Reference Include="OFT.Attributes">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\OFT.Attributes.dll</HintPath>
+    </Reference>
+    <Reference Include="OFT.Rendering">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\OFT.Rendering.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Drawing.Common">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\System.Drawing.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="Utils.Common">
+      <HintPath>..\..\..\..\..\..\Program Files\ATAS X\Utils.Common.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
