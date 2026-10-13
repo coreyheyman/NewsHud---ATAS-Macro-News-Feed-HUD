@@ -47,7 +47,7 @@ namespace CustomIndicators
         [Display(Name = "High-Impact Only (Today's Events)", GroupName = "3. Event Filtering", Order = 1)]
         public bool HighImpactOnly { get; set; } = false;
 
-        [Display(Name = "Max Events to Show", GroupName = "3. Event Filtering", Order = 2)]
+        [Display(Name = "Max Events to Show in HUD", GroupName = "3. Event Filtering", Order = 2)]
         public int MaxEventsToShow { get; set; } = 5;
 
         // --- ALERTS ---
@@ -261,16 +261,22 @@ namespace CustomIndicators
 
             var eventsCopy = _dataManager.MarketEvents.ToList();
 
-            DateTime currentTime = DateTime.Now;
-            var todayQuery = eventsCopy.OfType<EconomicEvent>()
-                .Where(e => e.Timestamp.Date == DateTime.Today && e.Timestamp.AddMinutes(15) >= currentTime);
+            // TIMELINE EVENTS: Kept permanently on the chart for the whole day
+            var timelineEvents = eventsCopy.OfType<EconomicEvent>()
+                .Where(e => e.Timestamp.Date == DateTime.Today).ToList();
 
             if (HighImpactOnly)
             {
-                todayQuery = todayQuery.Where(e => e.Importance == EventImportance.High);
+                timelineEvents = timelineEvents.Where(e => e.Importance == EventImportance.High).ToList();
             }
 
-            var todayEvents = todayQuery.OrderBy(e => e.Timestamp).Take(Math.Max(1, MaxEventsToShow)).ToList();
+            // HUD EVENTS: Pulled from the timeline list, but auto-expire 15 mins after passing
+            DateTime currentTime = DateTime.Now;
+            var hudEvents = timelineEvents
+                .Where(e => e.Timestamp.AddMinutes(15) >= currentTime)
+                .OrderBy(e => e.Timestamp)
+                .Take(Math.Max(1, MaxEventsToShow)).ToList();
+
             var newsItems = eventsCopy.OfType<NewsItem>()
                 .OrderByDescending(e => e.Timestamp).Skip(_scrollOffset).Take(15).ToList();
 
@@ -282,7 +288,7 @@ namespace CustomIndicators
             {
                 int bottomY = Container.Region.Height - 10;
 
-                foreach (var ev in todayEvents)
+                foreach (var ev in timelineEvents)
                 {
                     int xCenter = GetXCoordinateByTime(ev.Timestamp);
 
@@ -316,8 +322,13 @@ namespace CustomIndicators
                         string popupText = $"{ev.Timestamp:HH:mm} | {ev.Description}";
                         var wrappedHeadline = WrapText(popupText, 40);
 
-                        int popW = 260;
-                        int popH = 10 + (wrappedHeadline.Count * 16);
+                        string details = "No additional forecast data.";
+                        if (!string.IsNullOrEmpty(ev.Actual) || !string.IsNullOrEmpty(ev.Forecast) || !string.IsNullOrEmpty(ev.Previous))
+                            details = $"Act: {ev.Actual ?? "-"} | Est: {ev.Forecast ?? "-"} | Prev: {ev.Previous ?? "-"}";
+                        var wrappedDetails = WrapText(details, 45);
+
+                        int popW = 280;
+                        int popH = 15 + (wrappedHeadline.Count * 16) + (wrappedDetails.Count * 16);
                         int popX = xCenter - (popW / 2);
                         int popY = iconY - popH - 10;
 
@@ -334,6 +345,12 @@ namespace CustomIndicators
                         foreach (var line in wrappedHeadline)
                         {
                             context.DrawString(line, _headerFont, Color.White, popX + 10, textY);
+                            textY += 16;
+                        }
+                        textY += 2;
+                        foreach (var line in wrappedDetails)
+                        {
+                            context.DrawString(line, _textFont, Color.LightGray, popX + 10, textY);
                             textY += 16;
                         }
                     }
@@ -380,13 +397,13 @@ namespace CustomIndicators
 
             int currentY = contentStartY;
 
-            // --- SECTION: TODAY'S EVENTS ---
+            // --- SECTION: TODAY'S EVENTS (HUD) ---
             context.DrawString("TODAY'S EVENTS", _headerFont, Color.LightGray, x + 10, currentY);
             currentY += 20;
 
-            if (todayEvents.Any())
+            if (hudEvents.Any())
             {
-                foreach (var ev in todayEvents)
+                foreach (var ev in hudEvents)
                 {
                     if (HeaderPosition == HeaderPositionOption.Bottom && currentY > maxYLimit - 40) break;
 
@@ -406,9 +423,9 @@ namespace CustomIndicators
                             currentY += 18;
                         }
 
-                        string details = "No additional forecast data provided.";
-                        if (!string.IsNullOrEmpty(ev.Actual) || !string.IsNullOrEmpty(ev.Forecast))
-                            details = $"Actual: {ev.Actual ?? "-"} | Forecast: {ev.Forecast ?? "-"}";
+                        string details = "No additional forecast data.";
+                        if (!string.IsNullOrEmpty(ev.Actual) || !string.IsNullOrEmpty(ev.Forecast) || !string.IsNullOrEmpty(ev.Previous))
+                            details = $"Act: {ev.Actual ?? "-"} | Est: {ev.Forecast ?? "-"} | Prev: {ev.Previous ?? "-"}";
 
                         var wrappedSummary = WrapText(details, 52);
                         foreach (var line in wrappedSummary)
