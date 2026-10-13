@@ -22,30 +22,60 @@
 
 ---
 
-## Installation & Setup Guide
+## Instructions:
 
-Getting NewsHud running on your ATAS platform takes just a few minutes. Follow these steps:
+Option A: Installing via Compiled .dll File (Easiest) If you shared a pre-compiled .dll file, users can install it instantly without editing code:
 
-### Step 1: Open Your ATAS Custom Indicators Folder
+Download the .dll file.
 
-1. Open **ATAS**.
-2. Navigate to the main menu and open the **Indicator Editor** (or press `Ctrl + I` to open indicators, click **Add**, and select **Custom / Visual Indicator** or open your workspace source folder).
-3. Place the NewsHud source files (`TradeHudVisualIndicator.cs`, `MarketDataManager.cs`, and the service files) into your ATAS custom indicators directory (typically located under your Documents folder or ATAS installation path under `CustomIndicators`).
+Open your ATAS custom indicators folder by pasting this path into your Windows File Explorer address bar: %APPDATA%\ATAS\Indicators
 
-### Step 2: Compile in Visual Studio
+Drop the .dll file directly into that folder.
 
-1. Open the project solution containing your NewsHud files in **Visual Studio**.
-2. Ensure you have the required dependencies referenced (`ATAS.Indicators`, `OFT.Rendering`, etc.).
-3. Press **`Ctrl + Shift + B`** to build/compile the solution. Verify that there are zero compilation errors.
+Open or restart ATAS, open any chart, and press Ctrl + I.
 
-### Step 3: Add to Your Chart in ATAS
+Look under the Custom category to find and add Account Info(Custom).
 
-1. Return to your active ATAS chart window.
-2. Right-click the chart and select **Indicators** (or press `Ctrl + I`).
-3. Scroll through your indicator list and find **`NewsHud - Macro & News Feed`**.
-4. Click **Add** and apply it to your chart.
+Option B: Visual Studio
 
-### Step 4: Final Verification
+Create a New Class Library Project Open Visual Studio and click Create a new project.
+Search for and select Class Library (make sure it's the C# version targeting .NET Framework or the appropriate .NET runtime version your ATAS version uses, typically .NET 10 depending on the ATAS build). Click Next.
+
+Name your project (e.g., AccountInfoCustom), choose your saving location, and click Create.
+
+Add ATAS Reference Assemblies To compile ATAS indicators, your project needs references to the core ATAS libraries (ATAS.Indicators.dll and OFT.Rendering.dll).
+In the Solution Explorer on the right, right-click on Dependencies (or References) and select Add Reference... (or Manage NuGet Packages if applicable).
+
+Click Browse and navigate to your ATAS installation directory (usually C:\Program Files\ATAS\ or your user path).
+
+Select the following required DLL files:
+
+ATAS.Indicators.dll
+
+OFT.Rendering.dll
+
+Any other dependencies referenced by your project (like data feed cores).
+
+Click OK to add them. (Tip: In the reference properties, set Copy Local to False since ATAS loads these natively at runtime).
+
+Add the Code File Visual Studio automatically creates a default file named Class1.cs. Right-click it, select Rename, and change it to MyCustomIndicator.cs.
+Open the file, delete any placeholder code, and paste your indicator C# source code into it.
+
+Save the file (Ctrl + S).
+
+Build the Project Go to the top menu and select Build > Clean Solution (to clear out old build caches).
+Select Build > Build Solution (Ctrl + Shift + B).
+
+Check the Output window at the bottom to ensure it says 1 succeeded, 0 failed.
+
+Deploy to ATAS Once built successfully, go to your project folder in Windows Explorer and find the compiled file located in bin\Debug\ or bin\Release.
+Copy the generated .dll file.
+
+Drop it directly into your local ATAS indicators folder: %APPDATA%\ATAS\Indicators
+
+Open ATAS, open a chart, press Ctrl + I, and add your custom indicator from the list!
+
+(If you have any trouble during this process, chatgpt, claude or gemini is your friend)
 
 * The HUD will instantly render in the top-left corner of your chart (fully customizable via settings for position and offsets).
 * The default ATAS plot line is hidden automatically, leaving you with a sleek, minimalist trading HUD.
