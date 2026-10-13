@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -15,6 +15,9 @@ namespace TradeHUD.DataEngine.Services
         [JsonPropertyName("country")] public string Country { get; set; }
         [JsonPropertyName("date")] public string DateString { get; set; }
         [JsonPropertyName("impact")] public string Impact { get; set; }
+        [JsonPropertyName("forecast")] public string Forecast { get; set; }
+        [JsonPropertyName("actual")] public string Actual { get; set; }
+        [JsonPropertyName("previous")] public string Previous { get; set; }
     }
 
     public class ForexFactoryCalendarService
@@ -43,16 +46,35 @@ namespace TradeHUD.DataEngine.Services
                 return new List<EconomicEvent> { new EconomicEvent { Timestamp = DateTime.Now, Description = "CAL: Circuit Breaker Active. Retrying...", Importance = EventImportance.Medium } };
             }
 
-            if (_cachedEvents.Count > 0 && (DateTime.Now - _lastFetchTime).TotalMinutes < 15) return _cachedEvents;
+            // --- AUTO-REFRESH TRIGGER ---
+            // If an event passed within the last 6 minutes but has no Actual data yet,
+            // we override the 15-minute lock to fetch the fresh results immediately.
+            bool needsImmediateRefresh = false;
+            if (_cachedEvents.Count > 0)
+            {
+                foreach (var ev in _cachedEvents)
+                {
+                    if (ev.Timestamp <= DateTime.Now && (DateTime.Now - ev.Timestamp).TotalMinutes <= 6 && string.IsNullOrWhiteSpace(ev.Actual))
+                    {
+                        needsImmediateRefresh = true;
+                        break;
+                    }
+                }
+            }
 
-            // HARDCODED: Completely ignores the ATAS settings box 
+            if (_cachedEvents.Count > 0)
+            {
+                // Normal 15-min throttle, or an accelerated 55-second throttle if waiting for a live event drop
+                if (!needsImmediateRefresh && (DateTime.Now - _lastFetchTime).TotalMinutes < 15) return _cachedEvents;
+                if (needsImmediateRefresh && (DateTime.Now - _lastFetchTime).TotalSeconds < 55) return _cachedEvents;
+            }
+
             string targetUrl = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
             try
             {
                 var response = await _httpClient.GetAsync(targetUrl);
 
-                // If banned by FairEconomy, use CodeTabs proxy to mask the IP
                 if (response.StatusCode == (HttpStatusCode)429 || response.StatusCode == (HttpStatusCode)403)
                 {
                     targetUrl = "https://api.codetabs.com/v1/proxy?quest=" + targetUrl;
@@ -87,7 +109,10 @@ namespace TradeHUD.DataEngine.Services
                             {
                                 Timestamp = parsedOffset.LocalDateTime,
                                 Description = $"[{item.Country}] {item.Title}",
-                                Importance = importance
+                                Importance = importance,
+                                Forecast = string.IsNullOrWhiteSpace(item.Forecast) ? null : item.Forecast,
+                                Actual = string.IsNullOrWhiteSpace(item.Actual) ? null : item.Actual,
+                                Previous = string.IsNullOrWhiteSpace(item.Previous) ? null : item.Previous
                             };
                             ecoEvent.CalculateVolatilityWindow(TimeSpan.FromMinutes(30));
                             result.Add(ecoEvent);
@@ -98,7 +123,7 @@ namespace TradeHUD.DataEngine.Services
                 if (result.Count > 0) { _cachedEvents = result; _lastFetchTime = DateTime.Now; }
                 return _cachedEvents.Count > 0 ? _cachedEvents : result;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 _circuitBreakerUntil = DateTime.Now.AddMinutes(1);
                 if (_cachedEvents.Count > 0) return _cachedEvents;
