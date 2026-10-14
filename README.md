@@ -17,6 +17,7 @@
 * **Resource Optimization**: Implements strict `static` memory caching and proper `OnDispose` cleanup to prevent background memory leaks or "zombie" timers.
 
 <img width="360" height="374" alt="image" src="https://github.com/user-attachments/assets/91f9cc00-d930-437d-b72a-09e1f5fc4f0b" />
+<img width="1596" height="756" alt="image" src="https://github.com/user-attachments/assets/1d680d0c-5382-4cf3-91cd-1b4da7aeae4f" />
 <img width="617" height="544" alt="image" src="https://github.com/user-attachments/assets/00f5f6f9-fabf-4ed5-abaa-ac5a05351a7f" />
 
 
